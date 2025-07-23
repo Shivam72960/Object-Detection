@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YOLOv3 Object Detection</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="rgba(255,255,255,0.1)"/><circle cx="75" cy="75" r="1" fill="rgba(255,255,255,0.05)"/><circle cx="50" cy="10" r="0.5" fill="rgba(255,255,255,0.1)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        position: relative;
+        z-index: 2;
+      }
+
+      .glass-card {
+        background: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 24px;
+        padding: 40px;
+        box-shadow: 
+          0 20px 40px rgba(0, 0, 0, 0.1),
+          inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+
+      .glass-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 
+          0 30px 60px rgba(0, 0, 0, 0.15),
+          inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      }
+
+      h1 {
+        text-align: center;
+        color: white;
+        font-size: 3.5rem;
+        font-weight: 800;
+        margin-bottom: 10px;
+        background: linear-gradient(135deg, #fff, #e0e7ff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        letter-spacing: -0.02em;
+      }
+
+      .subtitle {
+        text-align: center;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 1.2rem;
+        margin-bottom: 40px;
+        font-weight: 300;
+      }
+
+      .upload-section {
+        margin-bottom: 40px;
+        text-align: center;
+        position: relative;
+      }
+
+      .file-upload-wrapper {
+        position: relative;
+        display: inline-block;
+        margin-bottom: 20px;
+      }
+
+      .file-upload {
+        position: relative;
+        overflow: hidden;
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        border: none;
+        border-radius: 50px;
+        padding: 16px 32px;
+        color: white;
+        font-weight: 600;
+        font-size: 1.1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        transform: translateY(0);
+      }
+
+      .file-upload:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 35px rgba(102, 126, 234, 0.6);
+        background: linear-gradient(135deg, #7c8ff0, #8a5cb8);
+      }
+
+      .file-upload input[type="file"] {
+        position: absolute;
+        left: 0;
+        top: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+      }
+
+      .detect-btn {
+        background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+        border: none;
+        border-radius: 50px;
+        padding: 16px 40px;
+        color: white;
+        font-weight: 700;
+        font-size: 1.2rem;
+        cursor: pointer;
+        margin-left: 20px;
+        transition: all 0.3s ease;
+        box-shadow: 0 8px 25px rgba(255, 107, 107, 0.4);
+        transform: translateY(0);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .detect-btn::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s;
+      }
+
+      .detect-btn:hover::before {
+        left: 100%;
+      }
+
+      .detect-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 35px rgba(255, 107, 107, 0.6);
+        background: linear-gradient(135deg, #ff7979, #f97316);
+      }
+
+      .detect-btn:active {
+        transform: translateY(-1px);
+      }
+
+      .results {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 30px;
+        margin-bottom: 40px;
+      }
+
+      .image-container {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 25px;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .image-container::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #667eea, #764ba2, #ff6b6b);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      .image-container:hover::before {
+        opacity: 1;
+      }
+
+      .image-container:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      .image-container h3 {
+        color: white;
+        font-size: 1.4rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+        text-align: center;
+      }
+
+      .image-container img {
+        width: 100%;
+        height: auto;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        transition: transform 0.3s ease;
+      }
+
+      .image-container img:hover {
+        transform: scale(1.02);
+      }
+
+      .detections-list {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 30px;
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+      }
+
+      .detections-list h3 {
+        color: white;
+        font-size: 1.6rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+        text-align: center;
+      }
+
+      .detections-list ul {
+        list-style: none;
+        display: grid;
+        gap: 12px;
+      }
+
+      .detections-list li {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05));
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 16px 20px;
+        border-radius: 16px;
+        color: white;
+        font-weight: 500;
+        font-size: 1.1rem;
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .detections-list li::before {
+        content: '🎯';
+        margin-right: 12px;
+        font-size: 1.2rem;
+      }
+
+      .detections-list li:hover {
+        transform: translateX(8px);
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.1));
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+      }
+
+      .loading {
+        display: none;
+        justify-content: center;
+        align-items: center;
+        margin: 20px 0;
+      }
+
+      .loading.active {
+        display: flex;
+      }
+
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(255, 255, 255, 0.2);
+        border-left: 4px solid white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .pulse {
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+        }
+        70% {
+          box-shadow: 0 0 0 20px rgba(255, 255, 255, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+        }
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 10px;
+        }
+        
+        .glass-card {
+          padding: 20px;
+          border-radius: 16px;
+        }
+        
+        h1 {
+          font-size: 2.5rem;
+        }
+        
+        .detect-btn {
+          margin-left: 0;
+          margin-top: 15px;
+          display: block;
+          width: 100%;
+        }
+        
+        .results {
+          grid-template-columns: 1fr;
+          gap: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="glass-card">
+        <h1>Object Detection</h1>
+        <p class="subtitle">Powered by YOLOv3 AI Technology</p>
+        
+        <div class="upload-section">
+          <div class="file-upload-wrapper">
+            <label class="file-upload">
+              📁 Choose Image
+              <input type="file" id="fileInput" accept="image/*" />
+            </label>
+          </div>
+          <button class="detect-btn pulse" onclick="uploadImage()">🔍 Detect Objects</button>
+          <div class="loading" id="loading">
+            <div class="spinner"></div>
+          </div>
+        </div>
+        
+        <div class="results">
+          <div class="image-container">
+            <h3>📸 Original Image</h3>
+            <img id="originalImage" src="" alt="Original Image" style="display: none;" />
+          </div>
+          <div class="image-container">
+            <h3>🎯 Detected Objects</h3>
+            <img id="processedImage" src="" alt="Processed Image" style="display: none;" />
+          </div>
+        </div>
+        
+        <div class="detections-list">
+          <h3>🔍 Detection Results</h3>
+          <ul id="detections"></ul>
+        </div>
+      </div>
+    </div>
+    
+    <script>
+      function uploadImage() {
+        const fileInput = document.getElementById("fileInput");
+        const file = fileInput.files[0];
+        const loading = document.getElementById("loading");
+        
+        if (!file) {
+          alert("Please select an image first! 📷");
+          return;
+        }
+        
+        // Show loading animation
+        loading.classList.add('active');
+        
+        const formData = new FormData();
+        formData.append("file", file);
+        
+        fetch("/detect", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            // Hide loading animation
+            loading.classList.remove('active');
+            
+            if (data.error) {
+              alert(`Error: ${data.error} ❌`);
+              return;
+            }
+            
+            // Display the original image
+            const originalImg = document.getElementById("originalImage");
+            originalImg.src = `/uploads/${data.original_image}`;
+            originalImg.style.display = 'block';
+            
+            // Display the processed image
+            const processedImg = document.getElementById("processedImage");
+            processedImg.src = `/processed/${data.processed_image}`;
+            processedImg.style.display = 'block';
+            
+            // Display the detections
+            const detectionsList = document.getElementById("detections");
+            detectionsList.innerHTML = "";
+            
+            if (data.detections.length === 0) {
+              const li = document.createElement("li");
+              li.innerHTML = "🔍 No objects detected in this image";
+              li.style.textAlign = "center";
+              li.style.fontStyle = "italic";
+              detectionsList.appendChild(li);
+            } else {
+              data.detections.forEach((detection, index) => {
+                const li = document.createElement("li");
+                li.textContent = detection;
+                li.style.animationDelay = `${index * 0.1}s`;
+                li.classList.add('fade-in');
+                detectionsList.appendChild(li);
+              });
+            }
+          })
+          .catch((error) => {
+            // Hide loading animation
+            loading.classList.remove('active');
+            console.error("Error:", error);
+            alert("An error occurred. Please try again! ⚠️");
+          });
+      }
+      
+      // Add fade-in animation for detection items
+      document.head.insertAdjacentHTML('beforeend', `
+        <style>
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .fade-in {
+            animation: fadeIn 0.5s ease forwards;
+          }
+        </style>
+      `);
+    </script>
+  </body>
+</html>
